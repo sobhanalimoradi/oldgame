@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smash Mechanics - Full Package</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: sans-serif;
+            margin-top: 50px;
+        }
+        canvas {
+            background-color: #2a2a2a;
+            border: 2px solid #555;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        p { margin-top: 15px; color: #aaa; font-size: 14px; text-align: center;}
+        .highlight { color: #00d2ff; font-weight: bold; }
+        .special { color: #ff3366; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>Smash Physics - Final Build</h2>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <p>Controls: <span class="highlight">A/D</span> or <span class="highlight">Left/Right</span> to move. <span class="highlight">Spacebar</span> to Jump.<br>
+    Press <span class="special">Shift</span> in the air for your Up-Special recovery!</p>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // The Player & Platform Setup
+        const player = {
+            x: 290, y: 100, width: 20, height: 20,
+            vx: 0, vy: 0, speed: 5, jumpForce: -10, specialForce: -16,
+            jumps: 2, maxJumps: 2,
+            isHanging: false,
+            isHelpless: false, 
+            canSpecial: true,  
+            color: "#00d2ff"
+        };
+
+        const platform = { x: 150, y: 300, width: 300, height: 20 };
+        const gravity = 0.5;
+        const friction = 0.8;
+
+        let keys = { left: false, right: false };
+
+        // --- INPUT HANDLING ---
+        window.addEventListener("keydown", (e) => {
+            if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = true;
+            if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
+            
+            if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
+                if(e.code === "Space") e.preventDefault(); 
+                handleJump();
+            }
+
+            if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
+                handleSpecial();
+            }
+        });
+
+        window.addEventListener("keyup", (e) => {
+            if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = false;
+            if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = false;
+        });
+
+        // --- ACTIONS ---
+        function handleJump() {
+            if (player.isHanging) {
+                player.isHanging = false;
+                player.vy = player.jumpForce;
+                player.jumps--;
+            } else if (player.jumps > 0 && !player.isHelpless) {
+                player.vy = player.jumpForce;
+                player.jumps--;
+            }
+        }
+
+        function handleSpecial() {
+            if (!player.isHanging && player.canSpecial) {
+                player.vy = player.specialForce; 
+                player.canSpecial = false;
+                player.isHelpless = true;        
+            }
+        }
+
+        function resetPlayerStates() {
+            player.jumps = player.maxJumps;
+            player.isHelpless = false;
+            player.canSpecial = true;
+        }
+
+        // --- CORE GAME LOOP ---
+        function updateGame() {
+            // 1. Air Drift & Movement
+            if (!player.isHanging) {
+                if (keys.left) player.vx -= 1;
+                if (keys.right) player.vx += 1;
+                
+                player.vx *= friction;
+                player.x += player.vx;
+                player.vy += gravity;
+                player.y += player.vy;
+            }
+
+            // 2. Map Borders (Blast Zones)
+            if (player.y > canvas.height + 50 || player.x < -50 || player.x > canvas.width + 50) {
+                player.x = 290;
+                player.y = 50;
+                player.vy = 0;
+                player.vx = 0;
+                player.isHanging = false;
+                resetPlayerStates();
+            }
+
+            // 3. Floor Collision
+            if (player.y + player.height >= platform.y && 
+                player.y + player.height <= platform.y + 20 && 
+                player.x + player.width > platform.x && 
+                player.x < platform.x + platform.width && 
+                player.vy > 0) {
+                
+                player.y = platform.y - player.height;
+                player.vy = 0;
+                player.isHanging = false;
+                resetPlayerStates();
+            }
+
+            // 4. Ledge Snap
+            let nearLeftEdge = (player.x + player.width >= platform.x - 5 && player.x + player.width <= platform.x + 10);
+            let nearRightEdge = (player.x <= platform.x + platform.width + 5 && player.x >= platform.x + platform.width - 10);
+            let nearTop = (player.y >= platform.y - 15 && player.y <= platform.y + 10);
+
+            if (player.vy > 0 && !player.isHanging) {
+                if ((nearLeftEdge || nearRightEdge) && nearTop) {
+                    player.isHanging = true;
+                    player.vy = 0;
+                    player.vx = 0;
+                    player.y = platform.y; 
+                    resetPlayerStates(); 
+                    
+                    if (nearLeftEdge) player.x = platform.x - player.width;
+                    if (nearRightEdge) player.x = platform.x + platform.width;
+                }
+            }
+
+            // Visual updates based on state
+            if (player.isHanging) {
+                player.color = "#ff9900"; 
+            } else if (player.isHelpless) {
+                player.color = "#666666"; 
+            } else {
+                player.color = "#00d2ff"; 
+            }
+        }
+
+        // --- RENDERING ---
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Platform
+            ctx.fillStyle = "#888";
+            ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+
+            // Player
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // UI Text
+            ctx.fillStyle = "white";
+            ctx.font = "16px Arial";
+            ctx.fillText(`Jumps: ${player.jumps}/2`, 20, 30);
+            
+            if (player.canSpecial) {
+                ctx.fillStyle = "#ff3366";
+                ctx.fillText(`Special: READY`, 20, 50);
+            } else {
+                ctx.fillStyle = "#666";
+                ctx.fillText(`Special: USED`, 20, 50);
+            }
+            
+            if(player.isHanging) ctx.fillText(`Ledge Grabbed!`, 20, 75);
+            if(player.isHelpless && !player.isHanging) ctx.fillText(`HELPLESS (Freefall)`, 20, 75);
+        }
+
+        function loop() {
+            updateGame();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
